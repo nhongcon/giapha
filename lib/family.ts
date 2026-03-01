@@ -1,15 +1,16 @@
 export type Person = {
   id: string;
   name: string;
-  gender?: string;
+  gender?: "M" | "F";
+  branch?: string;
   birth?: string;
   death?: string;
+  spouse?: string;
+  address?: string;
   fatherId?: string;
   motherId?: string;
 
-  spouse?: string;   // ✅ TEXT bạn tự điền
-
-  branch?: string;
+  phone?: string; // ✅ thêm dòng này
 };
 
 export type Indexes = {
