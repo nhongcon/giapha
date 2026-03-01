@@ -9,7 +9,7 @@ export type Person = {
   address?: string;
   fatherId?: string;
   motherId?: string;
-
+spouseIds?: string[];
   phone?: string; // ✅ thêm dòng này
 };
 
