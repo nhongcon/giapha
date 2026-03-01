@@ -218,7 +218,7 @@ function PersonNode({ data }: NodeProps<any>) {
       </div>
 
       <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
-        📞 {p.phone && p.phone.trim() ? p.phone : "—"}
+       📞 {"—"}
       </div>
 
       <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
