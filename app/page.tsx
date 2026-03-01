@@ -1,18 +1,19 @@
 import FamilyMap from "../components/FamilyMap";
+import { headers } from "next/headers";
 
 export default async function Page() {
-  const res = await fetch("http://localhost:3000/api/people", { cache: "no-store" });
+  const h = await headers();
+  const host = h.get("host");
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  const baseUrl = `${proto}://${host}`;
+
+  const res = await fetch(`${baseUrl}/api/people`, { cache: "no-store" });
   const data = await res.json().catch(() => ({} as any));
   const people = Array.isArray(data.people) ? data.people : [];
 
   return (
     <main style={{ padding: 14, fontFamily: "system-ui" }}>
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ fontSize: 22, fontWeight: 950 }}>Gia phả</div>
-        <div style={{ opacity: 0.75 }}>
-          {data.error ? `API lỗi: ${data.error}` : `Đã tải: ${people.length} người`}
-        </div>
-      </div>
+      {/* ... */}
       <FamilyMap people={people} />
     </main>
   );
