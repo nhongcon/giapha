@@ -714,7 +714,7 @@ export default function FamilyMap({ people }: { people: Person[] }) {
             minZoom={0.02}
             maxZoom={3.5}
             proOptions={{ hideAttribution: true }}
-            connectionLineType="smoothstep"
+            connectionLineType={"smoothstep" as any}
           >
             <Background />
             {nodes.length > 0 ? <MiniMap pannable zoomable /> : null}
