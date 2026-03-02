@@ -27,16 +27,25 @@ import {
 
 import FamilyProfilePanel from "./FamilyProfilePanel";
 
-const GAP_X = 420; // khoảng cách trong cùng 1 đời
-const GAP_Y = 240; // khoảng cách giữa các đời
+// ===== Layout tuning =====
+const GAP_X = 420;
+const GAP_Y = 240;
 const PERSON_W = 260;
-const CHILD_GAP = 360; // giãn con trong cùng 1 nhóm
-const MIN_NODE_GAP = PERSON_W + 90; // chống đè trong 1 đời
-const HUB_OFFSET_Y = 160; // hub nằm dưới cha/mẹ một chút
-const CLUSTER_PAD = 180; // đệm mỗi cụm cha (tách biệt cụm con khác cha)
-const CLUSTER_GAP = 120; // khoảng cách tối thiểu giữa 2 cụm cha
+
+const CHILD_GAP = 360;
+const MIN_NODE_GAP = PERSON_W + 90;
+
+const HUB_OFFSET_Y = 160;
+const CLUSTER_PAD = 180;
+const CLUSTER_GAP = 120;
+
 const HUB_SIZE = 18;
 const COUPLE_SIZE = 34;
+
+function isMobileNow() {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(max-width: 900px)").matches;
+}
 
 function resolveRowOverlaps(ids: string[], pos: Map<string, { x: number; y: number }>) {
   const byY = new Map<number, string[]>();
@@ -75,31 +84,6 @@ function resolveRowOverlaps(ids: string[], pos: Map<string, { x: number; y: numb
   }
 }
 
-function centerXOfPerson(pos: Map<string, { x: number; y: number }>, id: string) {
-  const p = pos.get(id);
-  if (!p) return 0;
-  return p.x + PERSON_W / 2;
-}
-
-function centerXOfParentKey(pos: Map<string, { x: number; y: number }>, parentKey: string) {
-  if (parentKey.startsWith("c:")) {
-    const c = parseCoupleId(parentKey);
-    if (!c) return 0;
-
-    const aHas = pos.has(c.a);
-    const bHas = pos.has(c.b);
-
-    if (!aHas && !bHas) return 0;
-    if (aHas && !bHas) return centerXOfPerson(pos, c.a);
-    if (!aHas && bHas) return centerXOfPerson(pos, c.b);
-
-    const ax = centerXOfPerson(pos, c.a);
-    const bx = centerXOfPerson(pos, c.b);
-    return (ax + bx) / 2;
-  }
-  return centerXOfPerson(pos, parentKey);
-}
-
 function shiftX(pos: Map<string, { x: number; y: number }>, ids: string[], dx: number) {
   for (const id of ids) {
     const p = pos.get(id);
@@ -129,6 +113,7 @@ function branchAccent(branch?: string) {
   return `hsl(${hue} 70% 75%)`;
 }
 
+// Couple node id
 function coupleId(a: string, b: string) {
   const [x, y] = [a, b].sort();
   return `c:${x}|${y}`;
@@ -141,12 +126,32 @@ function parseCoupleId(id: string) {
   return { a: parts[0], b: parts[1] };
 }
 
-function makePersonNode(p: Person, x: number, y: number): Node {
-  return { id: p.id, type: "person", position: { x, y }, data: { person: p } };
+function centerXOfPerson(pos: Map<string, { x: number; y: number }>, id: string) {
+  const p = pos.get(id);
+  if (!p) return 0;
+  return p.x + PERSON_W / 2;
 }
+
+function centerXOfParentKey(pos: Map<string, { x: number; y: number }>, parentKey: string) {
+  if (parentKey.startsWith("c:")) {
+    const c = parseCoupleId(parentKey);
+    if (!c) return 0;
+    const aHas = pos.has(c.a);
+    const bHas = pos.has(c.b);
+    if (!aHas && !bHas) return 0;
+    if (aHas && !bHas) return centerXOfPerson(pos, c.a);
+    if (!aHas && bHas) return centerXOfPerson(pos, c.b);
+    const ax = centerXOfPerson(pos, c.a);
+    const bx = centerXOfPerson(pos, c.b);
+    return (ax + bx) / 2;
+  }
+  return centerXOfPerson(pos, parentKey);
+}
+
 function makeCoupleNode(id: string, x: number, y: number): Node {
   return { id, type: "couple", position: { x, y }, data: {} };
 }
+
 function makeEdge(source: string, target: string, kind: "parent" | "link"): Edge {
   if (kind === "link") {
     return {
@@ -217,14 +222,6 @@ function PersonNode({ data }: NodeProps<any>) {
         Vợ/Chồng: {p.spouse && p.spouse.trim() ? p.spouse : "—"}
       </div>
 
-      <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
-       📞 {"—"}
-      </div>
-
-      <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
-        📍 {p.address && p.address.trim() ? p.address : "—"}
-      </div>
-
       <div style={{ fontSize: 11, opacity: 0.6, marginTop: 8 }}>
         ID: {p.id} • Đời {String(genFromId(p.id)).padStart(2, "0")} • #
         {String(orderFromId(p.id)).padStart(2, "0")}
@@ -234,26 +231,13 @@ function PersonNode({ data }: NodeProps<any>) {
         id="top"
         type="target"
         position={Position.Top}
-        style={{
-          left: "50%",
-          transform: "translateX(-50%)",
-          width: 10,
-          height: 10,
-          opacity: 0,
-        }}
+        style={{ left: "50%", transform: "translateX(-50%)", width: 10, height: 10, opacity: 0 }}
       />
-
       <Handle
         id="bottom"
         type="source"
         position={Position.Bottom}
-        style={{
-          left: "50%",
-          transform: "translateX(-50%)",
-          width: 10,
-          height: 10,
-          opacity: 0,
-        }}
+        style={{ left: "50%", transform: "translateX(-50%)", width: 10, height: 10, opacity: 0 }}
       />
     </div>
   );
@@ -263,8 +247,8 @@ function CoupleNode() {
   return (
     <div
       style={{
-        width: 34,
-        height: 34,
+        width: COUPLE_SIZE,
+        height: COUPLE_SIZE,
         borderRadius: 999,
         border: "2px solid rgba(0,0,0,0.18)",
         background: "white",
@@ -298,8 +282,8 @@ function HubNode() {
   return (
     <div
       style={{
-        width: 18,
-        height: 18,
+        width: HUB_SIZE,
+        height: HUB_SIZE,
         borderRadius: 999,
         border: "2px solid rgba(0,0,0,0.25)",
         background: "white",
@@ -323,6 +307,11 @@ function HubNode() {
   );
 }
 
+/**
+ * Layout CHUẨN theo đời:
+ * - y = (đời - 1) * GAP_Y
+ * - trong mỗi đời: sort theo orderFromId, fallback theo birth
+ */
 function layoutByGeneration(idx: Indexes, peopleIds: string[]) {
   const visible = peopleIds.filter((id) => idx.byId.has(id));
 
@@ -360,6 +349,28 @@ function layoutByGeneration(idx: Indexes, peopleIds: string[]) {
   return pos;
 }
 
+// ===== Mobile: pin topmost node to top of viewport =====
+function pinTopMostToTop(rf: ReactFlowInstance, topPadPx: number) {
+  try {
+    const vp = rf.getViewport?.();
+    const ns = rf.getNodes?.() || [];
+    if (!vp || ns.length === 0) return;
+
+    let minY = Infinity;
+    for (const n of ns) {
+      if (!Number.isFinite(n.position?.y)) continue;
+      minY = Math.min(minY, n.position.y);
+    }
+    if (!Number.isFinite(minY)) return;
+
+    // screenY = flowY * zoom + vp.y
+    // want minY at topPad: topPad = minY*zoom + newY  => newY = topPad - minY*zoom
+    const newY = topPadPx - minY * vp.zoom;
+
+    rf.setViewport?.({ x: vp.x, y: newY, zoom: vp.zoom }, { duration: 260 });
+  } catch {}
+}
+
 export default function FamilyMap({ people }: { people: Person[] }) {
   const idx = useMemo(() => buildIndexes(people), [people]);
   const rf = useRef<ReactFlowInstance | null>(null);
@@ -368,9 +379,6 @@ export default function FamilyMap({ people }: { people: Person[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
-
-  const [showSearch, setShowSearch] = useState(false);
-  const [showProfile, setShowProfile] = useState(false);
 
   const nameList = useMemo(() => {
     const list = Array.from(idx.byId.values()).map((p) => ({
@@ -390,9 +398,9 @@ export default function FamilyMap({ people }: { people: Person[] }) {
 
   function rebuildGraph(focusId: string) {
     const pack = showThreeGenerations(idx, focusId);
-
     const pos = layoutByGeneration(idx, pack.peopleIds);
 
+    // ===== group children by parent source =====
     type Group = { parentKey: string; children: string[] };
     const groups = new Map<string, Group>();
 
@@ -413,6 +421,7 @@ export default function FamilyMap({ people }: { people: Person[] }) {
       groups.get(parentKey)!.children.push(childId);
     }
 
+    // Ensure couple positions exist
     for (const g of groups.values()) {
       if (!g.parentKey.startsWith("c:")) continue;
       const c = parseCoupleId(g.parentKey);
@@ -425,12 +434,10 @@ export default function FamilyMap({ people }: { people: Person[] }) {
       pos.set(g.parentKey, { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 + 10 });
     }
 
+    // Spread children around parent CENTER
     for (const g of groups.values()) {
       g.children = uniq(g.children);
       g.children.sort((a, b) => orderFromId(a) - orderFromId(b));
-
-      const parentPos = pos.get(g.parentKey);
-      if (!parentPos) continue;
 
       const n = g.children.length;
       if (n === 0) continue;
@@ -439,28 +446,19 @@ export default function FamilyMap({ people }: { people: Person[] }) {
       if (!firstChildPos) continue;
 
       const childY = firstChildPos.y;
-      const startX = parentPos.x - ((n - 1) * CHILD_GAP) / 2;
+      const pcx = centerXOfParentKey(pos, g.parentKey);
+      if (!pcx) continue;
 
+      const startCenter = pcx - ((n - 1) * CHILD_GAP) / 2;
       g.children.forEach((cid, i) => {
-        pos.set(cid, { x: startX + i * CHILD_GAP, y: childY });
+        const cx = startCenter + i * CHILD_GAP;
+        const left = cx - PERSON_W / 2;
+        pos.set(cid, { x: left, y: childY });
       });
-
-      const first = pos.get(g.children[0]);
-      const last = pos.get(g.children[n - 1]);
-      if (first && last) {
-        parentPos.x = (first.x + last.x) / 2;
-        pos.set(g.parentKey, parentPos);
-      }
     }
 
-    type Cluster = {
-      key: string;
-      y: number;
-      x: number;
-      halfW: number;
-      moveIds: string[];
-    };
-
+    // Separate parent clusters
+    type Cluster = { key: string; y: number; x: number; halfW: number; moveIds: string[] };
     const clusters: Cluster[] = [];
 
     for (const g of groups.values()) {
@@ -496,7 +494,7 @@ export default function FamilyMap({ people }: { people: Person[] }) {
       clusters.push({
         key: g.parentKey,
         y,
-        x: parentPos.x,
+        x: centerXOfParentKey(pos, g.parentKey),
         halfW,
         moveIds: uniq(moveIds),
       });
@@ -522,30 +520,20 @@ export default function FamilyMap({ people }: { people: Person[] }) {
         }
         cursor = cl.x + cl.halfW;
       }
-
-      const beforeCenter = row.reduce((s, c) => s + c.x, 0) / Math.max(1, row.length);
-      const afterCenter =
-        row.reduce((s, c) => s + (pos.get(c.key)?.x ?? c.x), 0) / Math.max(1, row.length);
-
-      const dxRow = beforeCenter - afterCenter;
-      for (const cl of row) shiftX(pos, cl.moveIds, dxRow);
     }
 
     resolveRowOverlaps(pack.peopleIds, pos);
 
+    // Nodes
     const personNodes: Node[] = [];
     for (const id of pack.peopleIds) {
       const p = idx.byId.get(id);
       const xy = pos.get(id);
       if (!p || !xy) continue;
-      personNodes.push({
-        id: p.id,
-        type: "person",
-        position: { x: xy.x, y: xy.y },
-        data: { person: p },
-      });
+      personNodes.push({ id: p.id, type: "person", position: { x: xy.x, y: xy.y }, data: { person: p } });
     }
 
+    // Edges + couple + hubs
     const coupleNodes: Node[] = [];
     const hubNodes: Node[] = [];
     const newEdges: Edge[] = [];
@@ -565,7 +553,8 @@ export default function FamilyMap({ people }: { people: Person[] }) {
       if (g.parentKey.startsWith("c:")) {
         if (!coupleSet.has(g.parentKey)) {
           coupleSet.add(g.parentKey);
-          coupleNodes.push(makeCoupleNode(g.parentKey, parentPos.x, parentPos.y));
+          const cx = centerXOfParentKey(pos, g.parentKey);
+          coupleNodes.push(makeCoupleNode(g.parentKey, cx - COUPLE_SIZE / 2, parentPos.y));
 
           const c = parseCoupleId(g.parentKey);
           if (c && pos.has(c.a) && pos.has(c.b)) {
@@ -576,15 +565,18 @@ export default function FamilyMap({ people }: { people: Person[] }) {
       }
 
       if (g.children.length <= 1) {
-        pushEdge(makeEdge(g.parentKey, g.children[0], "parent"));
+        if (g.children[0]) pushEdge(makeEdge(g.parentKey, g.children[0], "parent"));
         continue;
       }
 
       const hubId = `h:${g.parentKey}`;
+      const pcx = centerXOfParentKey(pos, g.parentKey);
+      const hubX = pcx ? pcx - HUB_SIZE / 2 : parentPos.x + PERSON_W / 2 - HUB_SIZE / 2;
+
       hubNodes.push({
         id: hubId,
         type: "hub",
-        position: { x: parentPos.x, y: parentPos.y + HUB_OFFSET_Y },
+        position: { x: hubX, y: parentPos.y + HUB_OFFSET_Y },
         data: {},
       });
 
@@ -611,7 +603,6 @@ export default function FamilyMap({ people }: { people: Person[] }) {
       }
     }
 
-    // ✅ lọc node có position NaN/Infinity để tránh MiniMap/Background warning
     const allNodes = [...personNodes, ...coupleNodes, ...hubNodes].filter((n) => {
       const x = n.position?.x;
       const y = n.position?.y;
@@ -621,21 +612,26 @@ export default function FamilyMap({ people }: { people: Person[] }) {
     setNodes(allNodes);
     setEdges(newEdges);
 
-    const fxy = pos.get(focusId);
-    if (fxy && rf.current) {
-      rf.current.setCenter(fxy.x + PERSON_W / 2, fxy.y + 40, { zoom: 1.05, duration: 420 });
-      setTimeout(() => rf.current?.fitView({ duration: 360, padding: 0.22 }), 60);
-    }
+    // Fit + pin topmost on mobile
+    setTimeout(() => {
+      if (!rf.current) return;
+
+      const mobile = isMobileNow();
+      rf.current.fitView({ padding: mobile ? 0.18 : 0.22, duration: 320 });
+
+      // “người cao nhất dính trên cùng” (mobile only)
+      if (mobile) {
+        setTimeout(() => {
+          if (!rf.current) return;
+          pinTopMostToTop(rf.current, 12);
+        }, 360);
+      }
+    }, 50);
   }
 
   function focus(id: string) {
     setSelectedId(id);
     rebuildGraph(id);
-
-    if (typeof window !== "undefined" && window.matchMedia("(max-width: 900px)").matches) {
-      setShowProfile(true);
-      setShowSearch(false);
-    }
   }
 
   const onNodeClick = (_: any, node: Node) => {
@@ -652,19 +648,19 @@ export default function FamilyMap({ people }: { people: Person[] }) {
 
     const all = people.map((p) => p.id);
     all.sort((a, b) => {
-      const ag = genFromId(a),
-        bg = genFromId(b);
+      const ag = genFromId(a);
+      const bg = genFromId(b);
       if (ag !== bg) return ag - bg;
       return orderFromId(a) - orderFromId(b);
     });
 
     focus(all[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [people]); // ✅ chắc chắn chạy lại khi data đổi
+  }, [people]);
 
-   return (
+  return (
     <div className="fm-wrap">
-      {/* Top search bar (PC) */}
+      {/* ===== Desktop top search ===== */}
       <header className="fm-top fm-desktop">
         <div className="fm-topTitle">Tìm người</div>
 
@@ -675,7 +671,6 @@ export default function FamilyMap({ people }: { people: Person[] }) {
             placeholder="Gõ tên…"
             style={inputStyle}
           />
-
           {suggestions.length > 0 && (
             <div className="fm-suggestBox">
               {suggestions.map((s) => (
@@ -700,9 +695,8 @@ export default function FamilyMap({ people }: { people: Person[] }) {
         </div>
       </header>
 
-      {/* Main 2 columns (PC): Map left, Profile right */}
-      <main className="fm-main">
-        {/* ✅ MAP (chỉ 1 ReactFlow duy nhất) */}
+      {/* ===== Desktop main ===== */}
+      <main className="fm-main fm-desktop">
         <section className="fm-map">
           <ReactFlow
             nodes={nodes}
@@ -715,101 +709,89 @@ export default function FamilyMap({ people }: { people: Person[] }) {
             maxZoom={3.5}
             proOptions={{ hideAttribution: true }}
             connectionLineType={"smoothstep" as any}
+            panOnDrag
+            zoomOnPinch
+            zoomOnDoubleClick={false}
+            preventScrolling
+            selectionOnDrag={false}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            elementsSelectable={false}
           >
             <Background />
             {nodes.length > 0 ? <MiniMap pannable zoomable /> : null}
             <Controls showInteractive={false} />
           </ReactFlow>
-
-          {/* Mobile floating buttons */}
-          <div className="fm-mobilebar fm-mobile">
-            <button
-              className="fm-btn"
-              onClick={() => {
-                setShowSearch(true);
-                setShowProfile(false);
-              }}
-            >
-              🔎 Tìm
-            </button>
-            <button
-              className="fm-btn"
-              onClick={() => {
-                setShowProfile(true);
-                setShowSearch(false);
-              }}
-              disabled={!selectedId}
-              style={!selectedId ? { opacity: 0.5 } : undefined}
-            >
-              👤 Thông tin
-            </button>
-          </div>
         </section>
 
-        {/* ✅ PANEL (PC only) */}
-        <aside className="fm-profile fm-desktop">
+        <aside className="fm-profile">
           <FamilyProfilePanel idx={idx} selectedId={selectedId} />
         </aside>
       </main>
 
-      {/* Mobile sheets */}
-      {showSearch && (
-        <div className="fm-sheet fm-mobile" onClick={() => setShowSearch(false)}>
-          <div className="fm-sheetCard" onClick={(e) => e.stopPropagation()}>
-            <div className="fm-sheetHandle" />
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-              <div style={{ fontWeight: 950 }}>Tìm người</div>
-              <button className="fm-x" onClick={() => setShowSearch(false)}>
-                ✕
-              </button>
-            </div>
-
+      {/* ===== Mobile: Search always on top, Map 40%, Info 60% ===== */}
+      <div className="fm-mobileRoot fm-mobile">
+        <div className="fm-mobileHeader">
+          <div className="fm-mTitle">Gia phả</div>
+          <div className="fm-mSearchWrap">
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Gõ tên…"
-              style={inputStyle}
+              placeholder="Tìm theo tên…"
+              className="fm-mInput"
             />
-
             {suggestions.length > 0 && (
-              <div style={{ marginTop: 10 }}>
+              <div className="fm-mSuggest">
                 {suggestions.map((s) => (
                   <button
                     key={s.id}
+                    className="fm-mItem"
                     onClick={() => {
                       setQuery("");
                       focus(s.id);
-                      setShowSearch(false);
                     }}
-                    style={suggestBtn}
                   >
-                    <div style={{ fontWeight: 900 }}>{s.name}</div>
-                    <div style={{ fontSize: 12, opacity: 0.7 }}>{s.id}</div>
+                    <div className="fm-mName">{s.name}</div>
+                    <div className="fm-mSub">{s.id}</div>
                   </button>
                 ))}
               </div>
             )}
           </div>
         </div>
-      )}
 
-      {showProfile && (
-        <div className="fm-sheet fm-mobile" onClick={() => setShowProfile(false)}>
-          <div className="fm-sheetCard" onClick={(e) => e.stopPropagation()}>
-            <div className="fm-sheetHandle" />
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-              <div style={{ fontWeight: 950 }}>Thông tin</div>
-              <button className="fm-x" onClick={() => setShowProfile(false)}>
-                ✕
-              </button>
-            </div>
+        <div className="fm-mobileSplit">
+          <section className="fm-mobileMap">
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              nodeTypes={{ person: PersonNode, couple: CoupleNode, hub: HubNode }}
+              onInit={(instance) => (rf.current = instance)}
+              onNodeClick={onNodeClick}
+              fitView
+              minZoom={0.02}
+              maxZoom={3.5}
+              proOptions={{ hideAttribution: true }}
+              connectionLineType={"smoothstep" as any}
+              panOnDrag
+              zoomOnPinch
+              zoomOnDoubleClick={false}
+              preventScrolling
+              selectionOnDrag={false}
+              nodesDraggable={false}
+              nodesConnectable={false}
+              elementsSelectable={false}
+            >
+              <Background />
+              <Controls showInteractive={false} />
+            </ReactFlow>
+          </section>
 
-            <div style={{ marginTop: 10 }}>
-              <FamilyProfilePanel idx={idx} selectedId={selectedId} />
-            </div>
-          </div>
+          <section className="fm-mobileInfo">
+            <FamilyProfilePanel idx={idx} selectedId={selectedId} />
+          </section>
         </div>
-      )}
+      </div>
 
       <style jsx>{`
         .fm-wrap {
@@ -818,7 +800,7 @@ export default function FamilyMap({ people }: { people: Person[] }) {
           align-items: start;
         }
 
-        /* PC top bar */
+        /* Desktop */
         .fm-top {
           display: grid;
           grid-template-columns: 120px 420px 1fr;
@@ -842,8 +824,6 @@ export default function FamilyMap({ people }: { people: Person[] }) {
           opacity: 0.65;
           line-height: 1.35;
         }
-
-        /* suggestion dropdown on PC */
         .fm-suggestBox {
           position: absolute;
           top: calc(100% + 8px);
@@ -859,92 +839,122 @@ export default function FamilyMap({ people }: { people: Person[] }) {
           overflow: auto;
         }
 
-        /* Main layout: default = 1 column (mobile) */
         .fm-main {
           display: grid;
-          grid-template-columns: 1fr;
+          grid-template-columns: 1fr 520px;
           gap: 12px;
           align-items: start;
         }
 
         .fm-map {
-          height: calc(100vh - 88px);
-          border-radius: 0;
-          border: none;
+          height: calc(100vh - 170px);
+          border-radius: 16px;
+          border: 1px solid rgba(0, 0, 0, 0.08);
           overflow: hidden;
           position: relative;
-        }
-
-        /* PC override: 2 columns */
-        @media (min-width: 901px) {
-          .fm-main {
-            grid-template-columns: 1fr 520px;
-          }
-          .fm-map {
-            height: calc(100vh - 170px);
-            border-radius: 16px;
-            border: 1px solid rgba(0, 0, 0, 0.08);
-          }
-          .fm-profile {
-            height: calc(100vh - 170px);
-            overflow: auto;
-          }
-        }
-
-        /* Mobile bar + sheets */
-        .fm-btn {
-          border: 1px solid rgba(0, 0, 0, 0.12);
           background: white;
-          border-radius: 999px;
-          padding: 10px 14px;
-          font-weight: 900;
-          box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
         }
 
-        .fm-mobilebar {
-          position: absolute;
-          left: 50%;
-          bottom: 14px;
-          transform: translateX(-50%);
-          display: flex;
-          gap: 10px;
-          z-index: 50;
-        }
-
-        .fm-sheet {
-          position: fixed;
-          inset: 0;
-          background: rgba(0, 0, 0, 0.28);
-          z-index: 100;
-          display: flex;
-          align-items: flex-end;
-        }
-
-        .fm-sheetCard {
-          width: 100%;
-          max-height: 85vh;
-          background: white;
-          border-top-left-radius: 18px;
-          border-top-right-radius: 18px;
-          padding: 12px;
-          box-shadow: 0 -12px 28px rgba(0, 0, 0, 0.18);
+        .fm-profile {
+          height: calc(100vh - 170px);
           overflow: auto;
         }
 
-        .fm-sheetHandle {
-          width: 44px;
-          height: 5px;
-          border-radius: 999px;
-          background: rgba(0, 0, 0, 0.18);
-          margin: 6px auto 10px auto;
+        /* Mobile */
+        .fm-mobileRoot {
+          height: 100vh;
+          display: grid;
+          grid-template-rows: auto 1fr;
+          background: #0b0d12; /* nền “cao cấp” */
         }
 
-        .fm-x {
-          border: 1px solid rgba(0, 0, 0, 0.1);
+        .fm-mobileHeader {
+          padding: 10px 12px 12px 12px;
+          background: rgba(15, 17, 24, 0.92);
+          border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+          position: sticky;
+          top: 0;
+          z-index: 50;
+          backdrop-filter: blur(10px);
+        }
+
+        .fm-mTitle {
+          color: white;
+          font-weight: 950;
+          font-size: 14px;
+          letter-spacing: 0.2px;
+          margin-bottom: 8px;
+        }
+
+        .fm-mSearchWrap {
+          position: relative;
+        }
+
+        .fm-mInput {
+          width: 100%;
+          padding: 10px 12px;
+          border-radius: 14px;
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          outline: none;
+          background: rgba(255, 255, 255, 0.08);
+          color: white;
+          font-weight: 700;
+        }
+        .fm-mInput::placeholder {
+          color: rgba(255, 255, 255, 0.55);
+        }
+
+        .fm-mSuggest {
+          position: absolute;
+          top: calc(100% + 8px);
+          left: 0;
+          right: 0;
+          z-index: 80;
+          background: rgba(255, 255, 255, 0.96);
+          border-radius: 16px;
+          border: 1px solid rgba(0, 0, 0, 0.08);
+          box-shadow: 0 18px 44px rgba(0, 0, 0, 0.25);
+          max-height: 44vh;
+          overflow: auto;
+          padding: 10px;
+        }
+        .fm-mItem {
+          width: 100%;
+          text-align: left;
+          padding: 12px 12px;
+          border-radius: 14px;
+          border: 1px solid rgba(0, 0, 0, 0.06);
           background: white;
-          border-radius: 10px;
-          padding: 6px 10px;
-          font-weight: 900;
+          margin-bottom: 10px;
+        }
+        .fm-mName {
+          font-weight: 950;
+        }
+        .fm-mSub {
+          font-size: 12px;
+          opacity: 0.7;
+          margin-top: 2px;
+        }
+
+        .fm-mobileSplit {
+          height: 100%;
+          display: grid;
+          grid-template-rows: 40% 60%;
+          gap: 0;
+        }
+
+        .fm-mobileMap {
+          background: white;
+          border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+          overflow: hidden;
+        }
+
+        .fm-mobileInfo {
+          background: white;
+          overflow: auto;
+          min-height: 0;
+          -webkit-overflow-scrolling: touch;
+          padding: 10px;
         }
 
         /* visibility helpers */
@@ -954,6 +964,9 @@ export default function FamilyMap({ people }: { people: Person[] }) {
           }
           .fm-mobile {
             display: block;
+          }
+          .fm-wrap {
+            gap: 0;
           }
         }
         @media (min-width: 901px) {
@@ -968,17 +981,6 @@ export default function FamilyMap({ people }: { people: Person[] }) {
     </div>
   );
 }
-
-const panelStyle: React.CSSProperties = {
-  border: "1px solid rgba(0,0,0,0.08)",
-  borderRadius: 16,
-  padding: 12,
-  background: "white",
-  boxShadow: "0 8px 24px rgba(0,0,0,0.06)",
-  fontFamily: "system-ui",
-  height: "82vh",
-  overflow: "auto",
-};
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
@@ -998,11 +1000,4 @@ const suggestBtn: React.CSSProperties = {
   background: "white",
   marginBottom: 8,
   cursor: "pointer",
-};
-
-const mapStyle: React.CSSProperties = {
-  height: "82vh",
-  borderRadius: 16,
-  overflow: "hidden",
-  border: "1px solid rgba(0,0,0,0.08)",
 };

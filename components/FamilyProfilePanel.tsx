@@ -80,6 +80,11 @@ function pill(alive: boolean): React.CSSProperties {
   };
 }
 
+/**
+ * ✅ Quan trọng:
+ * - Không scroll ở đây nữa (mobile sẽ scroll ở fm-mProfile)
+ * - PC scroll ở .fm-profile (FamilyMap) nên vẫn OK
+ */
 const panelStyle: React.CSSProperties = {
   border: "1px solid rgba(0,0,0,0.08)",
   borderRadius: 16,
@@ -87,8 +92,8 @@ const panelStyle: React.CSSProperties = {
   background: "white",
   boxShadow: "0 8px 24px rgba(0,0,0,0.06)",
   fontFamily: "system-ui",
-  height: "100%", // ✅ PC panel fill cột phải
-  overflow: "auto",
+  height: "auto", // ✅
+  overflow: "visible", // ✅
 };
 
 const hr: React.CSSProperties = {
@@ -158,8 +163,8 @@ export default function FamilyProfilePanel({
       <Row label="Ngày mất" value={person.death || (stats.alive ? "—" : "Chưa rõ")} />
       <Row label="Chi họ" value={person.branch || "—"} />
 
-      <Row label="SĐT" value={person.phone?.trim() ? person.phone.trim() : "—"} />
-      <Row label="Địa chỉ" value={person.address?.trim() ? person.address.trim() : "—"} />
+      <Row label="SĐT" value={(person as any).phone?.trim() ? (person as any).phone.trim() : "—"} />
+      <Row label="Địa chỉ" value={(person as any).address?.trim() ? (person as any).address.trim() : "—"} />
 
       <hr style={hr} />
 
