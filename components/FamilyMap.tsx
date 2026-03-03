@@ -22,7 +22,6 @@ import {
   genFromId,
   orderFromId,
   compareOlderLeft,
-  showThreeGenerations,
 } from "../lib/family";
 
 import FamilyProfilePanel from "./FamilyProfilePanel";
@@ -43,7 +42,9 @@ const HUB_SIZE = 18;
 const COUPLE_SIZE = 34;
 
 // ===== Mobile header height (fixed) =====
-const MOBILE_HEADER_H = 92; // px (đổi nếu muốn cao/thấp hơn)
+const MOBILE_HEADER_H = 118; // px (tăng để chứa nút mode)
+
+type ViewMode = "compact" | "anc3" | "des3";
 
 function useIsMobile(breakpoint = 900) {
   const [isMobile, setIsMobile] = useState(false);
@@ -53,7 +54,6 @@ function useIsMobile(breakpoint = 900) {
     const mq = window.matchMedia(`(max-width: ${breakpoint}px)`);
     const apply = () => setIsMobile(mq.matches);
     apply();
-    // safari old: addListener
     if ((mq as any).addEventListener) (mq as any).addEventListener("change", apply);
     else (mq as any).addListener(apply);
     return () => {
@@ -241,8 +241,7 @@ function PersonNode({ data }: NodeProps<any>) {
       </div>
 
       <div style={{ fontSize: 11, opacity: 0.6, marginTop: 8 }}>
-        ID: {p.id} • Đời {String(genFromId(p.id)).padStart(2, "0")} • #
-        {String(orderFromId(p.id)).padStart(2, "0")}
+        ID: {p.id} • Đời {String(genFromId(p.id)).padStart(2, "0")} • #{String(orderFromId(p.id)).padStart(2, "0")}
       </div>
 
       <Handle
@@ -325,6 +324,10 @@ function HubNode() {
   );
 }
 
+/**
+ * Layout theo đời (genFromId) + normalize để hàng trên cùng luôn bắt đầu từ y=0
+ * => fitView zoom “to” hơn khi chỉ show 1 phần cây.
+ */
 function layoutByGeneration(idx: Indexes, peopleIds: string[]) {
   const visible = peopleIds.filter((id) => idx.byId.has(id));
 
@@ -345,12 +348,14 @@ function layoutByGeneration(idx: Indexes, peopleIds: string[]) {
     groups.set(g, ids);
   }
 
-  const pos = new Map<string, { x: number; y: number }>();
   const gens = Array.from(groups.keys()).sort((a, b) => a - b);
+  const minGen = gens.length ? Math.min(...gens) : 1;
+
+  const pos = new Map<string, { x: number; y: number }>();
 
   for (const g of gens) {
     const ids = groups.get(g)!;
-    const y = (g - 1) * GAP_Y;
+    const y = (g - minGen) * GAP_Y;
     const rowWidth = (ids.length - 1) * GAP_X;
     const startX = -rowWidth / 2;
 
@@ -360,6 +365,61 @@ function layoutByGeneration(idx: Indexes, peopleIds: string[]) {
   }
 
   return pos;
+}
+
+// ====== Build visible set (không show anh em ruột) ======
+function buildAncestors(idx: Indexes, focusId: string, depthUp: number) {
+  const seen = new Set<string>();
+  const q: Array<{ id: string; d: number }> = [{ id: focusId, d: 0 }];
+  while (q.length) {
+    const cur = q.shift()!;
+    if (seen.has(cur.id)) continue;
+    seen.add(cur.id);
+    if (cur.d >= depthUp) continue;
+
+    const p = idx.byId.get(cur.id);
+    if (!p) continue;
+
+    if (p.fatherId && idx.byId.has(p.fatherId)) q.push({ id: p.fatherId, d: cur.d + 1 });
+    if (p.motherId && idx.byId.has(p.motherId)) q.push({ id: p.motherId, d: cur.d + 1 });
+  }
+  return Array.from(seen);
+}
+
+function buildDescendants(idx: Indexes, focusId: string, depthDown: number) {
+  const seen = new Set<string>();
+  const q: Array<{ id: string; d: number }> = [{ id: focusId, d: 0 }];
+  while (q.length) {
+    const cur = q.shift()!;
+    if (seen.has(cur.id)) continue;
+    seen.add(cur.id);
+    if (cur.d >= depthDown) continue;
+
+    const children = idx.childrenOf.get(cur.id) || [];
+    for (const cid of children) {
+      if (idx.byId.has(cid)) q.push({ id: cid, d: cur.d + 1 });
+    }
+  }
+  return Array.from(seen);
+}
+
+/**
+ * Compact: chỉ hiện (1) bố của người được chọn (nếu có) + (2) người đó + (3) các con của người đó
+ * => KHÔNG hiện anh em ruột (cùng bố mẹ).
+ */
+function buildCompact(idx: Indexes, focusId: string) {
+  const ids = new Set<string>();
+  const me = idx.byId.get(focusId);
+  if (!me) return [];
+
+  ids.add(focusId);
+
+  if (me.fatherId && idx.byId.has(me.fatherId)) ids.add(me.fatherId);
+
+  const kids = idx.childrenOf.get(focusId) || [];
+  for (const k of kids) if (idx.byId.has(k)) ids.add(k);
+
+  return Array.from(ids);
 }
 
 // Mobile: sau khi fitView, kéo viewport lên để phần cao nhất không bị che bởi header fixed
@@ -376,8 +436,6 @@ function pinTopMostBelowHeader(rf: ReactFlowInstance, headerPx: number, pad = 10
     }
     if (!Number.isFinite(minY)) return;
 
-    // screenY = flowY*zoom + vp.y
-    // muốn minY nằm ngay dưới header => target = headerPx + pad
     const target = headerPx + pad;
     const newY = target - minY * vp.zoom;
 
@@ -393,6 +451,8 @@ export default function FamilyMap({ people }: { people: Person[] }) {
 
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [mode, setMode] = useState<ViewMode>("compact");
+
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
 
@@ -412,14 +472,25 @@ export default function FamilyMap({ people }: { people: Person[] }) {
     return nameList.filter((x) => x.nameLower.includes(q)).slice(0, 12);
   }, [query, nameList]);
 
-  function rebuildGraph(focusId: string) {
-    const pack = showThreeGenerations(idx, focusId);
-    const pos = layoutByGeneration(idx, pack.peopleIds);
+  function getVisibleIds(focusId: string, viewMode: ViewMode) {
+    if (viewMode === "anc3") return buildAncestors(idx, focusId, 3);
+    if (viewMode === "des3") return buildDescendants(idx, focusId, 3);
+    return buildCompact(idx, focusId);
+  }
 
+  function rebuildGraph(focusId: string, viewMode: ViewMode) {
+    const peopleIds = getVisibleIds(focusId, viewMode).filter((id) => idx.byId.has(id));
+
+    // fallback: nếu rỗng (case lạ), ít nhất show chính người đó
+    const finalIds = peopleIds.length ? peopleIds : [focusId].filter((id) => idx.byId.has(id));
+
+    const pos = layoutByGeneration(idx, finalIds);
+
+    // Group children theo parentKey (father/mother/couple) CHỈ DỰA TRÊN NHỮNG NODE ĐANG VISIBLE
     type Group = { parentKey: string; children: string[] };
     const groups = new Map<string, Group>();
 
-    for (const childId of pack.peopleIds) {
+    for (const childId of finalIds) {
       const child = idx.byId.get(childId);
       if (!child) continue;
 
@@ -436,6 +507,7 @@ export default function FamilyMap({ people }: { people: Person[] }) {
       groups.get(parentKey)!.children.push(childId);
     }
 
+    // Place couple nodes
     for (const g of groups.values()) {
       if (!g.parentKey.startsWith("c:")) continue;
       const c = parseCoupleId(g.parentKey);
@@ -448,6 +520,7 @@ export default function FamilyMap({ people }: { people: Person[] }) {
       pos.set(g.parentKey, { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 + 10 });
     }
 
+    // Re-space children around parent center
     for (const g of groups.values()) {
       g.children = uniq(g.children);
       g.children.sort((a, b) => orderFromId(a) - orderFromId(b));
@@ -470,6 +543,7 @@ export default function FamilyMap({ people }: { people: Person[] }) {
       });
     }
 
+    // Cluster overlap resolving
     type Cluster = { key: string; y: number; x: number; halfW: number; moveIds: string[] };
     const clusters: Cluster[] = [];
 
@@ -534,16 +608,23 @@ export default function FamilyMap({ people }: { people: Person[] }) {
       }
     }
 
-    resolveRowOverlaps(pack.peopleIds, pos);
+    resolveRowOverlaps(finalIds, pos);
 
+    // Build nodes
     const personNodes: Node[] = [];
-    for (const id of pack.peopleIds) {
+    for (const id of finalIds) {
       const p = idx.byId.get(id);
       const xy = pos.get(id);
       if (!p || !xy) continue;
-      personNodes.push({ id: p.id, type: "person", position: { x: xy.x, y: xy.y }, data: { person: p } });
+      personNodes.push({
+        id: p.id,
+        type: "person",
+        position: { x: xy.x, y: xy.y },
+        data: { person: p },
+      });
     }
 
+    // Build edges + hubs + couples
     const coupleNodes: Node[] = [];
     const hubNodes: Node[] = [];
     const newEdges: Edge[] = [];
@@ -630,15 +711,17 @@ export default function FamilyMap({ people }: { people: Person[] }) {
       if (isMobile) {
         setTimeout(() => {
           if (!rf.current) return;
-          pinTopMostBelowHeader(rf.current, 0, 8); // header không nằm trong map nữa (map đã nằm dưới header)
+          pinTopMostBelowHeader(rf.current, 0, 8);
         }, 360);
       }
     }, 50);
   }
 
-  function focus(id: string) {
+  function focus(id: string, nextMode?: ViewMode) {
+    const m = nextMode ?? mode;
     setSelectedId(id);
-    rebuildGraph(id);
+    if (nextMode) setMode(nextMode);
+    rebuildGraph(id, m);
   }
 
   const onNodeClick = (_: any, node: Node) => {
@@ -649,6 +732,13 @@ export default function FamilyMap({ people }: { people: Person[] }) {
     }
     focus(node.id);
   };
+
+  // Khi đổi mode, rebuild theo selected
+  useEffect(() => {
+    if (!selectedId) return;
+    rebuildGraph(selectedId, mode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   useEffect(() => {
     if (!people?.length) return;
@@ -661,23 +751,47 @@ export default function FamilyMap({ people }: { people: Person[] }) {
       return orderFromId(a) - orderFromId(b);
     });
 
-    focus(all[0]);
+    // default: mode compact
+    setMode("compact");
+    focus(all[0], "compact");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [people]);
 
-  // ========= Desktop render (tách hẳn) =========
+  const ModeButtons = (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <button
+        onClick={() => setMode("compact")}
+        style={modeBtn(mode === "compact")}
+        title="Chỉ hiện BỐ + NGƯỜI ĐƯỢC CHỌN + CÁC CON (không hiện anh em ruột)"
+      >
+        Bố + Con
+      </button>
+      <button
+        onClick={() => setMode("anc3")}
+        style={modeBtn(mode === "anc3")}
+        title="Xem tổ tiên 3 đời (lên 3 cấp)"
+      >
+        Tổ tiên 3 đời
+      </button>
+      <button
+        onClick={() => setMode("des3")}
+        style={modeBtn(mode === "des3")}
+        title="Xem hậu duệ 3 đời (xuống 3 cấp)"
+      >
+        Hậu duệ 3 đời
+      </button>
+    </div>
+  );
+
+  // ========= Desktop render =========
   if (!isMobile) {
     return (
       <div className="pc-wrap">
         <header className="pc-top">
           <div className="pc-title">Tìm người</div>
+
           <div className="pc-search">
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Gõ tên…"
-              style={inputStyle}
-            />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Gõ tên…" style={inputStyle} />
             {suggestions.length > 0 && (
               <div className="pc-suggest">
                 {suggestions.map((s) => (
@@ -696,8 +810,13 @@ export default function FamilyMap({ people }: { people: Person[] }) {
               </div>
             )}
           </div>
-          <div className="pc-hint">
-            Chọn 1 người sẽ tự hiện 3 đời: cha mẹ, anh em ruột, con… và anh em ruột của cha + con của họ.
+
+          <div className="pc-right">
+            {ModeButtons}
+            <div className="pc-hint">
+              Chọn 1 người: mặc định chỉ hiện <b>bố + người đó + các con</b> (không hiện anh em ruột). Dùng nút để xem tổ
+              tiên/hậu duệ 3 đời.
+            </div>
           </div>
         </header>
 
@@ -758,6 +877,11 @@ export default function FamilyMap({ people }: { people: Person[] }) {
           .pc-search {
             position: relative;
           }
+          .pc-right {
+            display: grid;
+            gap: 8px;
+            align-items: start;
+          }
           .pc-hint {
             font-size: 12px;
             opacity: 0.65;
@@ -784,14 +908,14 @@ export default function FamilyMap({ people }: { people: Person[] }) {
             align-items: start;
           }
           .pc-map {
-            height: calc(100vh - 170px);
+            height: calc(100vh - 190px);
             border-radius: 16px;
             border: 1px solid rgba(0, 0, 0, 0.08);
             overflow: hidden;
             background: white;
           }
           .pc-profile {
-            height: calc(100vh - 170px);
+            height: calc(100vh - 190px);
             overflow: auto;
           }
         `}</style>
@@ -799,11 +923,14 @@ export default function FamilyMap({ people }: { people: Person[] }) {
     );
   }
 
-  // ========= Mobile render (header fixed, map không bị che) =========
+  // ========= Mobile render =========
   return (
     <div className="m-wrap">
       <header className="m-header">
-        <div className="m-title">Gia phả</div>
+        <div className="m-titleRow">
+          <div className="m-title">Gia phả</div>
+          <div className="m-modes">{ModeButtons}</div>
+        </div>
 
         <div className="m-searchWrap">
           <input
@@ -871,7 +998,6 @@ export default function FamilyMap({ people }: { people: Person[] }) {
           background: #0b0d12;
         }
 
-        /* fixed header => map không bao giờ bị che */
         .m-header {
           position: fixed;
           left: 0;
@@ -884,13 +1010,21 @@ export default function FamilyMap({ people }: { people: Person[] }) {
           z-index: 100;
           backdrop-filter: blur(10px);
         }
+        .m-titleRow {
+          display: grid;
+          gap: 8px;
+          margin-bottom: 10px;
+        }
         .m-title {
           color: white;
           font-weight: 950;
           font-size: 14px;
           letter-spacing: 0.2px;
-          margin-bottom: 8px;
         }
+        .m-modes :global(button) {
+          font-size: 12px;
+        }
+
         .m-searchWrap {
           position: relative;
         }
@@ -940,7 +1074,6 @@ export default function FamilyMap({ people }: { people: Person[] }) {
           margin-top: 2px;
         }
 
-        /* body nằm dưới header */
         .m-body {
           padding-top: ${MOBILE_HEADER_H}px;
           height: 100vh;
@@ -985,3 +1118,14 @@ const suggestBtn: React.CSSProperties = {
   marginBottom: 8,
   cursor: "pointer",
 };
+
+function modeBtn(active: boolean): React.CSSProperties {
+  return {
+    padding: "8px 10px",
+    borderRadius: 12,
+    border: active ? "1px solid rgba(0,0,0,0.22)" : "1px solid rgba(0,0,0,0.10)",
+    background: active ? "rgba(0,0,0,0.06)" : "white",
+    fontWeight: 900,
+    cursor: "pointer",
+  };
+}
